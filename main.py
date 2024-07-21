@@ -1,5 +1,5 @@
 import pygame
-from kubagame import KubaGame, Marble
+from Kubagame import KubaGame, Marble
 
 WIDTH, HEIGHT = 800, 800
 ROWS, COLS = 7, 7
