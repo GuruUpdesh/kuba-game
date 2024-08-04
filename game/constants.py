@@ -1,5 +1,6 @@
 # Board dimensions
-WIDTH, HEIGHT = 800, 800
+WIDTH, HEIGHT = 1600, 900  # 16:9 aspect ratio
+BOARD_SIZE = min(WIDTH, HEIGHT) * 0.8
 ROWS, COLS = 7, 7
 SQUARE_SIZE = WIDTH // COLS
 
@@ -11,6 +12,7 @@ GREY_1 = (128, 128, 128)
 GREY_2 = (169, 169, 169)
 BLUE = (255, 255, 255)
 GREEN = (0, 255, 0)
+BACKGROUND = (240, 240, 240)
 
 class Color:
     CGREY = '\33[90m'

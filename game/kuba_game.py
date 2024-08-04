@@ -486,6 +486,15 @@ class KubaGame:
                 row = []
         print()
 
+    def get_all_marbles(self):
+        """
+        Returns a list of all non-None marbles on the board.
+        
+        Return:
+            list of Marble objects
+        """
+        return [marble for marble in self._board.values() if marble is not None]
+
 
     ### PYGAME
 
