@@ -1,16 +1,22 @@
 import pygame
 import asyncio
-from game.constants import WIDTH, HEIGHT
-from game2.kuba_ai import train_or_load_ai, AI_MODEL_FILE
-from game2.kuba_game import KubaGame
+from ai.kuba_ai import train_or_load_ai, AI_MODEL_FILE
+from game.kuba_game import KubaGame
 from ui.start_screen import StartScreen
 from ui.game_ui import GameUI
+
+WIDTH, HEIGHT = 1600, 900
 
 async def main_loop():
     pygame.init()
     pygame.font.init()
     WIN = pygame.display.set_mode((WIDTH, HEIGHT))
     pygame.display.set_caption("Kuba")
+
+    print("Training AI... This may take a while.")
+    trained_ai = train_or_load_ai(AI_MODEL_FILE, 1)
+    print("AI training complete!")
+
 
     start_screen = StartScreen(WIN)
     game_started = False
@@ -20,10 +26,6 @@ async def main_loop():
         pygame.display.flip()
         game_started = start_screen.handle_events()
         await asyncio.sleep(0)
-
-    print("Training AI... This may take a while.")
-    trained_ai = train_or_load_ai(AI_MODEL_FILE, 500)
-    print("AI training complete!")
 
     clock = pygame.time.Clock()
     FPS = 60

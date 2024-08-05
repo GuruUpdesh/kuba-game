@@ -1,17 +1,14 @@
-import select
 import pygame
 import os
-from game import marble
-import game
-from game.constants import BLUE, GREEN, ROWS, COLS, RED, WHITE, BLACK, GREY_1, GREY_2, BACKGROUND
-from game2.kuba_game import KubaGame
+from ui.colors import BLUE, GREEN, RED, WHITE, BLACK, GREY_1, GREY_2, BACKGROUND
+from game.kuba_game import KubaGame
 
 class GameUI:
     def __init__(self, screen, game: KubaGame):
         self.screen = screen
         self.game = game
         self.board_size = min(screen.get_width(), screen.get_height()) * 0.8
-        self.square_size = self.board_size // ROWS
+        self.square_size = self.board_size // 7
         self.board_offset = ((screen.get_width() - self.board_size) // 2, (screen.get_height() - self.board_size) // 2)
         self.font = pygame.font.Font(None, 36)
         self.small_font = pygame.font.Font(None, 24)
@@ -35,8 +32,8 @@ class GameUI:
     def draw_board(self):
         board_surface = pygame.Surface((self.board_size, self.board_size))
         board_surface.fill(GREY_1)
-        for row in range(ROWS):
-            for col in range(row % 2, ROWS, 2):
+        for row in range(7):
+            for col in range(row % 2, 7, 2):
                 pygame.draw.rect(board_surface, GREY_2, 
                                 (col * self.square_size, row * self.square_size, 
                                 self.square_size, self.square_size))
