@@ -1,0 +1,2 @@
+if winner should be able to make move
+if move attempt made on coordinate not containing players marble can't make move

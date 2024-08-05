@@ -102,17 +102,35 @@ class Marble:
         self.x = SQUARE_SIZE * self.get_col() + SQUARE_SIZE // 2
         self.y = SQUARE_SIZE * self.get_row() + SQUARE_SIZE // 2
 
-    def draw(self, win):
-        self.calc_pos()
-        if self.get_color() == "R":
-            print_color = RED
-        elif self.get_color() == "W":
-            print_color = WHITE
-        elif self.get_color() == "B":
-            print_color = BLACK
-        radius = SQUARE_SIZE // 2 - 10
-        if self.selected is False:
-            pygame.draw.circle(win, BLUE, (self.x, self.y), radius + 2)
-        else:
-            pygame.draw.circle(win, GREEN, (self.x, self.y), radius + 2)
-        pygame.draw.circle(win, print_color, (self.x, self.y), radius)
+    def draw(self, win, x, y, square_size):
+        radius = square_size // 2 - 5
+        
+        if self._color == "R":
+            base_color = RED
+            gradient_color = (255, 150, 150)  # Lighter red
+        elif self._color == "W":
+            base_color = WHITE
+            gradient_color = (220, 220, 220)  # Slightly darker white
+        elif self._color == "B":
+            base_color = BLACK
+            gradient_color = (100, 100, 100)  # Lighter black
+
+        # Draw selection circle
+        if self.selected:
+            pygame.draw.circle(win, GREEN, (int(x), int(y)), radius + 2)
+
+        # Draw gradient
+        for i in range(int(radius), 0, -1):
+            ratio = i / radius
+            color = [int(base_color[j] * ratio + gradient_color[j] * (1 - ratio)) for j in range(3)]
+            pygame.draw.circle(win, color, (int(x), int(y)), i)
+
+        # Add shine
+        shine_radius = int(radius * 0.4)
+        shine_offset = int(radius * -0.2)
+        for i in range(shine_radius, 0, -1):
+            alpha = int(255 * (1 - i / shine_radius))
+            shine_color = (255, 255, 255, alpha)
+            shine_surface = pygame.Surface((radius * 2, radius * 2), pygame.SRCALPHA)
+            pygame.draw.circle(shine_surface, shine_color, (radius, radius), i)
+            win.blit(shine_surface, (int(x - radius + shine_offset), int(y - radius + shine_offset)))

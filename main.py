@@ -1,7 +1,8 @@
 import pygame
 import asyncio
-from game.kuba_game import KubaGame
 from game.constants import WIDTH, HEIGHT
+from game2.kuba_ai import train_or_load_ai, AI_MODEL_FILE
+from game2.kuba_game import KubaGame
 from ui.start_screen import StartScreen
 from ui.game_ui import GameUI
 
@@ -20,13 +21,14 @@ async def main_loop():
         game_started = start_screen.handle_events()
         await asyncio.sleep(0)
 
+    print("Training AI... This may take a while.")
+    trained_ai = train_or_load_ai(AI_MODEL_FILE, 500)
+    print("AI training complete!")
+
     clock = pygame.time.Clock()
     FPS = 60
-    name_1 = 'PA'
-    name_2 = 'PB'
-    game = KubaGame((name_1, 'W'), (name_2, 'B'))
+    game = KubaGame()
     game_ui = GameUI(WIN, game)
-    count_click = 0
     run = True
 
     while run:
@@ -35,16 +37,16 @@ async def main_loop():
                 run = False
 
             if event.type == pygame.MOUSEBUTTONDOWN:
-                count_click += 1
-                print(count_click)
                 pos = pygame.mouse.get_pos()
                 board_pos = game_ui.get_board_position(pos)
                 if board_pos:
-                    row, col = board_pos
-                    if game.get_prev_move()[name_1] is None:
-                        game.select(name_1, row, col)
-                    else:
-                        game.select(game.get_current_turn(), row, col)
+                    game.select(board_pos)
+        
+        if game.current_player.name == "Bot" and not game.winner:
+            action = trained_ai.get_action(game)
+            coordinates, direction = action
+            game.make_move(coordinates, direction)
+            # await asyncio.sleep(0.5)
 
         game_ui.draw()
         await asyncio.sleep(0)

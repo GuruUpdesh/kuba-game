@@ -112,7 +112,7 @@ class KubaGame:
         2. After Validating the move The move is passed the helper method push. That pushed the marble at the parameter
         coordinate in the direction specified.
 
-        3. Then by comparing the opposing players previous move we validate that this move didn't violate the KO Rule.
+        3. Then by comparing the opposing players previouse validate that this move didn't violate the KO Rule.
             - "A player may not undo a move the opponent just made."
 
         5. if the move is successful we update the board and the positions of all the marbles on the board.
