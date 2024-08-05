@@ -1,6 +1,6 @@
 import pygame
 import asyncio
-from ai.kuba_ai import train_or_load_ai, AI_MODEL_FILE
+from ai.kuba_ai import train_ai
 from game.kuba_game import KubaGame
 from ui.start_screen import StartScreen
 from ui.game_ui import GameUI
@@ -14,7 +14,7 @@ async def main_loop():
     pygame.display.set_caption("Kuba")
 
     print("Training AI... This may take a while.")
-    trained_ai = train_or_load_ai(AI_MODEL_FILE, 1)
+    trained_ai = train_ai()
     print("AI training complete!")
 
 
@@ -58,3 +58,4 @@ async def main_loop():
 
 if __name__ == "__main__":
     asyncio.run(main_loop())
+    # ai = train_ai()

@@ -143,7 +143,6 @@ class Board:
             return [(row, col) for row, row_marbles in enumerate(self.grid)
                     for col, marble in enumerate(row_marbles) 
                     if marble is not None and marble.color == color]
-
 class Player:
     def __init__(self, name: str, color: MarbleColor):
         self.name = name

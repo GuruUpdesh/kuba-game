@@ -61,5 +61,5 @@ def performance_test_with_profiling(duration=20):
     
 
 if __name__ == "__main__":
-    performance_test_with_profiling(20)
-    # performance_test(1)
+    # performance_test_with_profiling(20)
+    performance_test(20)

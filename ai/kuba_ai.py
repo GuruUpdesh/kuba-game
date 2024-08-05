@@ -1,27 +1,121 @@
-import queue
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import torch.optim as optim
 import random
-from collections import defaultdict
-import pickle
-import multiprocessing as mp
-from tqdm import tqdm
+from collections import deque
+import numpy as np
+from game.kuba_game import Direction, KubaGame
 
-from game.kuba_game import KubaGame
+class DQN(nn.Module):
+    def __init__(self, input_size, output_size):
+        super(DQN, self).__init__()
+        self.fc1 = nn.Linear(input_size, 128)
+        self.fc2 = nn.Linear(128, 64)
+        self.fc3 = nn.Linear(64, output_size)
+
+    def forward(self, x):
+        x = torch.relu(self.fc1(x))
+        x = torch.relu(self.fc2(x))
+        return self.fc3(x)
 
 class KubaAI:
-    def __init__(self, epsilon=0.1, alpha=0.1, gamma=0.9, look_ahead_depth=2):
-        self.q_table = defaultdict(self.default_dict_factory)
+    def __init__(self, epsilon=0.1, gamma=0.99):
+        self.state_size = 7 * 7 * 3 + 1  # 7x7 board with 3 possible states per cell + current player
+        self.action_size = 7 * 7 * 4  # 7x7 possible positions, 4 possible directions
         self.epsilon = epsilon
-        self.alpha = alpha
         self.gamma = gamma
-        self.look_ahead_depth = look_ahead_depth
+        self.memory = deque(maxlen=2000)
+        self.batch_size = 32
 
-    @staticmethod
-    def default_dict_factory():
-        return defaultdict(float)
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        print(f"Using device: {self.device}")
+        self.model = DQN(self.state_size, self.action_size)
+        self.target_model = DQN(self.state_size, self.action_size)
+        self.optimizer = optim.Adam(self.model.parameters())
 
-    def get_state_key(self, game: KubaGame):
-        board_state = tuple(tuple(row) for row in game.board.grid)
-        return (board_state, game.current_player.color.value)
+    def get_state_representation(self, game: KubaGame):
+        state = np.zeros((7, 7, 3))
+        for i in range(7):
+            for j in range(7):
+                marble = game.board.get_marble((i, j))
+                if marble:
+                    if marble.color.value == 'W':
+                        state[i, j, 0] = 1
+                    elif marble.color.value == 'B':
+                        state[i, j, 1] = 1
+                    elif marble.color.value == 'R':
+                        state[i, j, 2] = 1
+        
+        current_player = 1 if game.current_player.color.value == 'W' else 0
+        return np.concatenate([state.flatten(), [current_player]])
+
+    def action_to_move(self, action):
+        position = action // 4
+        direction = action % 4
+        row = position // 7
+        col = position % 7
+        directions = [Direction.LEFT, Direction.RIGHT, Direction.UP, Direction.DOWN]
+        return ((row, col), directions[direction])
+
+    def move_to_action(self, move):
+        coordinates, direction = move
+        row, col = coordinates
+        position = row * 7 + col
+        direction_index = [Direction.LEFT, Direction.RIGHT, Direction.UP, Direction.DOWN].index(direction)
+        return position * 4 + direction_index
+
+    def get_action(self, game: KubaGame):
+        if random.random() < self.epsilon:
+            return random.choice(game.get_valid_moves())
+        else:
+            state = self.get_state_representation(game)
+            with torch.no_grad():
+                state_tensor = torch.FloatTensor(state).to(self.device)
+                q_values = self.model(state_tensor)
+                valid_moves = game.get_valid_moves()
+                valid_actions = [self.move_to_action(move) for move in valid_moves]
+                valid_q_values = q_values[valid_actions]
+                best_action_index = valid_q_values.argmax().item()
+                return valid_moves[best_action_index]
+
+    def update_model(self):
+        if len(self.memory) < self.batch_size:
+            return
+
+        batch = random.sample(self.memory, self.batch_size)
+        states, actions, rewards, next_states, dones = map(np.array, zip(*batch))
+
+        states = torch.FloatTensor(states).to(self.device)
+        actions = torch.LongTensor(actions).to(self.device)
+        rewards = torch.FloatTensor(rewards).to(self.device)
+        next_states = torch.FloatTensor(next_states).to(self.device)
+        dones = torch.FloatTensor(dones).to(self.device)
+
+        current_q_values = self.model(states).gather(1, actions.unsqueeze(1))
+        next_q_values = self.target_model(next_states).max(1)[0]
+        target_q_values = rewards + (1 - dones) * self.gamma * next_q_values
+
+        loss = F.mse_loss(current_q_values, target_q_values.unsqueeze(1))
+        self.optimizer.zero_grad()
+        loss.backward()
+        self.optimizer.step()
+
+    def update_target_model(self):
+        self.target_model.load_state_dict(self.model.state_dict())
+
+    def save_model(self, filename):
+        torch.save({
+            'model_state_dict': self.model.state_dict(),
+            'target_model_state_dict': self.target_model.state_dict(),
+            'optimizer_state_dict': self.optimizer.state_dict(),
+        }, filename)
+
+    def load_model(self, filename):
+        checkpoint = torch.load(filename, map_location=self.device)
+        self.model.load_state_dict(checkpoint['model_state_dict'])
+        self.target_model.load_state_dict(checkpoint['target_model_state_dict'])
+        self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
 
     def evaluate_state(self, game: KubaGame):
         current_player = game.current_player
@@ -36,13 +130,9 @@ class KubaAI:
         score += 5 * (8 - marble_counts[opponent.color.value])  # Removed opponent marbles
         score += 2 * (marble_counts[current_player.color.value] - marble_counts[opponent.color.value])  # Marble advantage
         score += self.evaluate_control(game, current_player.color.value)  # Board control
-        # score += self.evaluate_potential_moves(game, current_player)
         score += self.evaluate_distance_to_victory(game, current_player)
         
         return score
-    
-    # def evaluate_potential_moves(self, game, player):
-    #     return len(game.get_valid_moves()) * 0.5
     
     def evaluate_distance_to_victory(self, game, player):
         marbles_to_win = 7 - player.captured_red
@@ -64,178 +154,45 @@ class KubaAI:
                         control_score += 1
         return control_score
 
-    def get_action(self, game):
-        if random.random() < self.epsilon:
-            return random.choice(game.get_valid_moves())
-        else:
-            return self.get_best_move(game, self.look_ahead_depth)
-
-    def get_best_move(self, game, depth):
-        best_score = float('-inf')
-        best_move = None
-        for move in game.get_valid_moves():
-            new_game = game.clone()
-            new_game.make_move(*move)
-            score = self.minimax(new_game, depth - 1, False)
-            if score > best_score:
-                best_score = score
-                best_move = move
-        return best_move
-
-    def minimax(self, game, depth, maximizing_player):
-        if depth == 0 or game.winner:
-            return self.evaluate_state(game)
-        
-        if maximizing_player:
-            max_eval = float('-inf')
-            for move in game.get_valid_moves():
-                new_game = game.clone()
-                new_game.make_move(*move)
-                eval = self.minimax(new_game, depth - 1, False)
-                max_eval = max(max_eval, eval)
-            return max_eval
-        else:
-            min_eval = float('inf')
-            for move in game.get_valid_moves():
-                new_game = game.clone()
-                new_game.make_move(*move)
-                eval = self.minimax(new_game, depth - 1, True)
-                min_eval = min(min_eval, eval)
-            return min_eval
-
-    def update_q_value(self, state, action, next_state, reward, done):
-        current_q = self.q_table[state][tuple(action)]
-        if not self.q_table[next_state]:
-            max_next_q = 0
-        else:
-            max_next_q = max(self.q_table[next_state].values())
-        new_q = current_q + self.alpha * (reward + self.gamma * max_next_q - current_q)
-        self.q_table[state][tuple(action)] = new_q
-
-    def save_model(self, filename):
-        with open(filename, 'wb') as f:
-            pickle.dump(dict(self.q_table), f)
-
-    def load_model(self, filename):
-        with open(filename, 'rb') as f:
-            loaded_dict = pickle.load(f)
-            self.q_table = defaultdict(self.default_dict_factory, loaded_dict)
-
-def train_ai(num_episodes=10000):
+def train_ai(num_episodes=10, ai_model_file="kuba_ai_model.pth"):
     ai = KubaAI()
+    try:
+        ai.load_model(ai_model_file)
+        print("Loaded pre-trained AI model.")
+        return ai
+    except FileNotFoundError:
+        print("No pre-trained model found. Starting from scratch.")
+
     for episode in range(num_episodes):
         game = KubaGame()
-        state = ai.get_state_key(game)
+        state = ai.get_state_representation(game)
+        total_reward = 0
+        
         while not game.winner:
             action = ai.get_action(game)
             coordinates, direction = action
             game.make_move(coordinates, direction)
-            next_state = ai.get_state_key(game)
+            next_state = ai.get_state_representation(game)
             
             reward = ai.evaluate_state(game)
-            # if game.winner == game.current_player:
-            #     reward += 1000
             if game.winner == game.opponent:
                 reward -= 1000
+            elif game.winner == game.current_player:
+                reward += 1000
 
             done = game.winner is not None
-            ai.update_q_value(state, action, next_state, reward, done)
-            state = next_state
-
-        if episode:
-            print(f"Episode {episode} completed")
-
-    return ai
-
-# def train_ai_worker(num_episodes, shared_q, worker_id):
-#     ai = KubaAI()
-#     for _ in range(num_episodes):
-#         game = KubaGame()
-#         state = ai.get_state_key(game)
-#         episode_steps = 0
-#         max_steps = 1000  # Add a maximum number of steps per episode
-#         while not game.winner and episode_steps < max_steps:
-#             action = ai.get_action(game)
-#             coordinates, direction = action
-#             game.make_move(coordinates, direction)
-#             next_state = ai.get_state_key(game)
+            ai.memory.append((state, ai.move_to_action(action), reward, next_state, done))
             
-#             reward = ai.evaluate_state(game)
-#             if game.winner == game.opponent:
-#                 reward -= 1000
-#             elif game.winner == game.current_player:
-#                 reward += 1000
-#             elif episode_steps == max_steps - 1:
-#                 reward -= 500  # Penalize for reaching max steps
+            ai.update_model()
+            if episode % 10 == 0:
+                ai.update_target_model()
 
-#             done = game.winner is not None or episode_steps == max_steps - 1
-#             ai.update_q_value(state, action, next_state, reward, done)
-#             state = next_state
-#             episode_steps += 1
+            state = next_state
+            total_reward += reward
 
-#         shared_q.put((worker_id, 1))  # Signal completion of an episode
+        print(f"Episode {episode}, Total Reward: {total_reward}")
+        if episode % 100 == 0:
+            ai.save_model(ai_model_file)
 
-#     shared_q.put(('q_table', ai.q_table))  # Send the final Q-table
-
-# def train_ai_parallel(num_episodes=10000, num_processes=None):
-    if num_processes is None:
-        num_processes = mp.cpu_count()
-
-    episodes_per_process = num_episodes // num_processes
-    manager = mp.Manager()
-    shared_q = manager.Queue()
-
-    with mp.Pool(num_processes) as pool:
-        workers = [pool.apply_async(train_ai_worker, (episodes_per_process, shared_q, i)) for i in range(num_processes)]
-        
-        with tqdm(total=num_episodes, desc="Training Progress") as pbar:
-            q_tables = []
-            completed_episodes = 0
-            while completed_episodes < num_episodes or len(q_tables) < num_processes:
-                try:
-                    result = shared_q.get(timeout=1)  # Add a timeout
-                    if isinstance(result, tuple) and result[0] == 'q_table':
-                        q_tables.append(result[1])
-                    else:
-                        completed_episodes += 1
-                        pbar.update(1)
-                except queue.Empty:
-                    # Check if all workers are done
-                    if all(worker.ready() for worker in workers):
-                        break
-
-        # Ensure all workers have finished
-        for worker in workers:
-            worker.wait()
-
-        # Collect any remaining Q-tables
-        while not shared_q.empty():
-            result = shared_q.get()
-            if isinstance(result, tuple) and result[0] == 'q_table':
-                q_tables.append(result[1])
-
-    # Combine Q-tables from all processes
-    combined_q_table = defaultdict(KubaAI.default_dict_factory)
-    for q_table in q_tables:
-        for state, actions in q_table.items():
-            for action, value in actions.items():
-                combined_q_table[state][action] += value / num_processes
-
-    ai = KubaAI()
-    ai.q_table = combined_q_table
+    ai.save_model(ai_model_file)
     return ai
-
-def train_or_load_ai(filename, training_episodes=10000):
-    try:
-        ai = KubaAI()
-        ai.load_model(filename)
-        print("Loaded pre-trained AI model.")
-        return ai
-    except FileNotFoundError:
-        print(f"No pre-trained model found. Training new AI with {training_episodes} episodes...")
-        ai = train_ai(training_episodes)
-        ai.save_model(filename)
-        print("AI training complete and model saved.")
-        return ai
-
-AI_MODEL_FILE = "./ai/models/kuba_ai_model.pkl"
